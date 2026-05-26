@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/sans-pulp/pi-homelab-gitops.git
-    targetRevision: restructure
+    targetRevision: main
     path: apps
     directory:
       recurse: false

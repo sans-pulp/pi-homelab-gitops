@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/sans-pulp/pi-homelab-gitops.git
-    targetRevision: restructure #change to main after
+    targetRevision: main
     path: manifests/whoami
   destination:
     server: https://kubernetes.default.svc
