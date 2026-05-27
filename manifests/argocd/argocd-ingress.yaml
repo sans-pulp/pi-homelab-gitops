@@ -4,10 +4,15 @@ metadata:
   name: argocd
   namespace: argocd
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
-    ingress.kubernetes.io/protocol: h2c
+    cert-manager.io/cluster-issuer: homelab-ca-issuer
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
 spec:
   ingressClassName: traefik
+  tls:
+  - hosts:
+    - argocd.pi.local
+    secretName: argocd-tls
   rules:
   - host: argocd.pi.local
     http:
