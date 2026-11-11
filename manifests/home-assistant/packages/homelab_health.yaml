@@ -1,0 +1,31 @@
+# Homelab health for the TV's status line ("HOMELAB · ALL NORMAL" with a green/amber/red dot).
+# Needs the System Monitor integration (Settings → Devices & services → Add → System Monitor),
+# with these sensors enabled: Processor temperature, Memory usage, Disk usage /.
+# Later (Lab 10): add Argo CD app health and node readiness from Prometheus.
+
+template:
+  - sensor:
+      - name: Homelab status
+        unique_id: homelab_status
+        icon: mdi:raspberry-pi
+        state: >
+          {% set t = states('sensor.system_monitor_processor_temperature') | float(-1) %}
+          {% set m = states('sensor.system_monitor_memory_usage') | float(-1) %}
+          {% set d = states('sensor.system_monitor_disk_usage') | float(-1) %}
+          {% if t < 0 and m < 0 and d < 0 %}unknown
+          {% elif t >= 80 or m >= 92 or d >= 92 %}bad
+          {% elif t >= 70 or m >= 85 or d >= 85 %}warn
+          {% else %}good{% endif %}
+        attributes:
+          text: >
+            {% set t = states('sensor.system_monitor_processor_temperature') | float(-1) %}
+            {% set m = states('sensor.system_monitor_memory_usage') | float(-1) %}
+            {% set d = states('sensor.system_monitor_disk_usage') | float(-1) %}
+            {% if t < 0 and m < 0 and d < 0 %}Homelab · no data
+            {% elif t >= 70 %}Pi running hot · {{ t | round(0) | int }}°C
+            {% elif m >= 85 %}Pi memory high · {{ m | round(0) | int }}%
+            {% elif d >= 85 %}Pi disk filling · {{ d | round(0) | int }}%
+            {% else %}Homelab · all normal{% endif %}
+          temperature: "{{ states('sensor.system_monitor_processor_temperature') | float(none) }}"
+          memory: "{{ states('sensor.system_monitor_memory_usage') | float(none) }}"
+          disk: "{{ states('sensor.system_monitor_disk_usage') | float(none) }}"
