@@ -1,0 +1,30 @@
+# Home Assistant, lean first version (roadmap Stage 1, started 11 Nov 2026).
+# - Config in Git is only what holds no secrets: configuration.yaml, packages, dashboards, theme.
+# - Logins (Bravia PSK, Roborock account, tokens) are entered in the UI and live in /config/.storage on the PVC.
+# - Vault + ESO secrets, git-sync and the CI config check come with Labs 05-06.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: home
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+# A changed file gives the ConfigMap a new name, which restarts the pod with the new config.
+configMapGenerator:
+  - name: ha-config
+    files:
+      - config/configuration.yaml
+  - name: ha-packages
+    files:
+      - packages/tv_home.yaml
+      - packages/roborock.yaml
+      - packages/homelab_health.yaml
+  - name: ha-dashboards
+    files:
+      - dashboards/home.yaml
+  - name: ha-themes
+    files:
+      - themes/graphite.yaml
+  - name: ha-www
+    files:
+      - www/homelab-fonts.js

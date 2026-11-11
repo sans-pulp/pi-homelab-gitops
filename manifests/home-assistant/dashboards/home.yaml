@@ -1,0 +1,83 @@
+# "Home" dashboard (sidebar). YAML mode: edit here, merge, Argo CD restarts HA with it.
+# Entity IDs: see packages/tv_home.yaml.
+title: Home
+views:
+  - title: Now
+    path: now
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Living room TV
+            icon: mdi:television
+          - type: media-control
+            entity: media_player.bravia
+          - type: tile
+            entity: media_player.bravia
+            name: Bravia
+            features_position: bottom
+            features:
+              - type: media-player-volume-slider
+          - type: entities
+            entities:
+              - entity: media_player.bravia
+                type: attribute
+                attribute: source
+                name: Input
+              - entity: sensor.tv_home_feed
+                name: TV home screen feed (last built)
+      - type: grid
+        cards:
+          - type: heading
+            heading: Patricia
+            icon: mdi:robot-vacuum
+          - type: tile
+            entity: vacuum.patricia
+            name: Patricia
+            features_position: bottom
+            features:
+              - type: vacuum-commands
+                commands: [start_pause, stop, return_home, locate]
+          - type: entities
+            entities:
+              - entity: sensor.roborock_summary
+                name: Status
+              - entity: sensor.roborock_summary
+                type: attribute
+                attribute: battery
+                name: Battery
+                suffix: "%"
+              - entity: sensor.roborock_summary
+                type: attribute
+                attribute: error
+                name: Error
+      - type: grid
+        cards:
+          - type: heading
+            heading: Outside and the lab
+            icon: mdi:weather-partly-cloudy
+          - type: weather-forecast
+            entity: weather.forecast_home
+            forecast_type: daily
+          - type: tile
+            entity: sensor.homelab_status
+            name: Homelab
+          - type: entities
+            entities:
+              - entity: sensor.homelab_status
+                type: attribute
+                attribute: temperature
+                name: Pi temperature
+                suffix: °C
+              - entity: sensor.homelab_status
+                type: attribute
+                attribute: memory
+                name: Memory
+                suffix: "%"
+              - entity: sensor.homelab_status
+                type: attribute
+                attribute: disk
+                name: Disk
+                suffix: "%"

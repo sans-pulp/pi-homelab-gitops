@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: home-assistant
+  labels: {app: home-assistant}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}          # the volume mounts once; never two copies
+  selector:
+    matchLabels: {app: home-assistant}
+  template:
+    metadata:
+      labels: {app: home-assistant}
+    spec:
+      hostNetwork: true               # mDNS/SSDP discovery, Google Cast, Roborock local port
+      dnsPolicy: ClusterFirstWithHostNet
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: home-assistant
+          image: ghcr.io/home-assistant/home-assistant:2026.11.1   # pinned; bump by PR
+          env:
+            - {name: TZ, value: America/Toronto}
+          ports:
+            - {name: http, containerPort: 8123}
+          resources:
+            requests: {cpu: 100m, memory: 400Mi}
+            limits: {memory: 1536Mi}
+          startupProbe:
+            tcpSocket: {port: 8123}
+            periodSeconds: 5
+            failureThreshold: 120     # first start installs deps: allow 10 minutes
+          livenessProbe:
+            tcpSocket: {port: 8123}
+            periodSeconds: 30
+            failureThreshold: 4
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: ha-config, mountPath: /config/configuration.yaml, subPath: configuration.yaml}
+            - {name: ha-secrets, mountPath: /config/secrets.yaml, subPath: secrets.yaml, readOnly: true}
+            - {name: ha-packages, mountPath: /config/packages}
+            - {name: ha-dashboards, mountPath: /config/dashboards}
+            - {name: ha-themes, mountPath: /config/themes}
+            - {name: ha-www, mountPath: /config/www}
+      volumes:
+        # Created by hand on the Pi, never in Git (README: "Before the first sync"). ESO renders it from Vault in Lab 05.
+        - name: ha-secrets
+          secret: {secretName: ha-secrets}
+        - name: config
+          persistentVolumeClaim: {claimName: home-assistant-config}
+        - name: ha-config
+          configMap: {name: ha-config}
+        - name: ha-packages
+          configMap: {name: ha-packages}
+        - name: ha-dashboards
+          configMap: {name: ha-dashboards}
+        - name: ha-themes
+          configMap: {name: ha-themes}
+        - name: ha-www
+          configMap: {name: ha-www}
