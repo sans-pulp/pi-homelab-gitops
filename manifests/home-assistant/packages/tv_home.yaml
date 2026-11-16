@@ -1,0 +1,230 @@
+# Live data for the Bravia home screen (la-pulp/homelab-tv launcher) and TV pop-ups.
+#
+# The launcher reads one entity every 60 s:
+#   GET http://<pi-node-1 address>:8123/api/states/sensor.tv_home_feed   (Authorization: Bearer <token of the "tv" user>)
+# Its attributes are the feed (shape documented in README.md, "TV feed contract").
+#
+# Entity IDs this file expects (rename in Settings → Entities if yours differ):
+#   weather.forecast_home   Met.no, created at onboarding
+#   media_player.bravia     Sony Bravia TV integration, device renamed to "Bravia"
+#   sensor.homelab_status   packages/homelab_health.yaml
+#   sensor.roborock_summary packages/roborock.yaml
+
+template:
+  # Forecasts are no longer weather attributes; fetch them every 15 minutes.
+  - triggers:
+      - trigger: time_pattern
+        minutes: /15
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
+    actions:
+      - action: weather.get_forecasts
+        target: {entity_id: weather.forecast_home}
+        data: {type: daily}
+        response_variable: daily
+        continue_on_error: true
+    sensor:
+      - name: Weather outlook
+        unique_id: weather_outlook
+        icon: mdi:weather-partly-cloudy
+        state: "{{ states('weather.forecast_home') }}"
+        attributes:
+          forecast: >
+            {% if daily is defined and daily and 'weather.forecast_home' in daily %}
+              {{ daily['weather.forecast_home'].forecast[:7] }}
+            {% else %}{{ [] }}{% endif %}
+
+  - sensor:
+      - name: TV home feed
+        unique_id: tv_home_feed
+        icon: mdi:television-guide
+        # State = minute it was built, so the TV can tell fresh data from stale.
+        state: "{{ now().strftime('%Y-%m-%dT%H:%M') }}"
+        attributes:
+          version: "{{ 1 }}"
+          status: "{{ states('sensor.homelab_status') }}"
+          status_text: "{{ state_attr('sensor.homelab_status', 'text') or 'Homelab · no data' }}"
+          weather: >
+            {% set w = 'weather.forecast_home' %}
+            {% set f = state_attr('sensor.weather_outlook', 'forecast') or [] %}
+            {% set rise = state_attr('sun.sun', 'next_rising') %}
+            {% set sset = state_attr('sun.sun', 'next_setting') %}
+            {{ {
+              'condition': states(w),
+              'temp': state_attr(w, 'temperature'),
+              'feels': state_attr(w, 'apparent_temperature'),
+              'unit': state_attr(w, 'temperature_unit'),
+              'high': f[0].temperature if f | count > 0 else none,
+              'low': f[0].templow if f | count > 0 else none,
+              'precip_mm': f[0].precipitation if f | count > 0 else none,
+              'tomorrow': {'condition': f[1].condition, 'high': f[1].temperature, 'low': f[1].templow} if f | count > 1 else none,
+              'sunrise': as_local(as_datetime(rise)).strftime('%H:%M') if rise else none,
+              'sunset': as_local(as_datetime(sset)).strftime('%H:%M') if sset else none
+            } }}
+          week: >
+            {% set f = state_attr('sensor.weather_outlook', 'forecast') or [] %}
+            {% set ns = namespace(out=[]) %}
+            {% for d in f %}
+              {% set ns.out = ns.out + [{'day': as_local(as_datetime(d.datetime)).strftime('%a') | upper,
+                                        'condition': d.condition, 'high': d.temperature, 'low': d.templow}] %}
+            {% endfor %}
+            {{ ns.out }}
+          tv: >
+            {% set t = 'media_player.bravia' %}
+            {% set v = state_attr(t, 'volume_level') %}
+            {{ {
+              'state': states(t),
+              'source': state_attr(t, 'source'),
+              'title': state_attr(t, 'media_title'),
+              'volume': (v * 100) | round(0) | int if v is number else none,
+              'muted': state_attr(t, 'is_volume_muted')
+            } }}
+          vacuum: >
+            {% set r = 'sensor.roborock_summary' %}
+            {{ {
+              'state': states(r) | replace('_', ' '),
+              'battery': state_attr(r, 'battery'),
+              'error': state_attr(r, 'error'),
+              'last_clean': state_attr(r, 'last_clean'),
+              'next_service': state_attr(r, 'next_service')
+            } }}
+          # The sliding stack: cards in order. tone = good | warn | bad | info.
+          cards: >
+            {% set cards = namespace(l=[]) %}
+            {# Roborock #}
+            {% set r = 'sensor.roborock_summary' %}
+            {% if has_value(r) %}
+              {% set err = state_attr(r, 'error') %}
+              {% set b = state_attr(r, 'battery') %}
+              {% set lc = state_attr(r, 'last_clean') %}
+              {% set ns_ = state_attr(r, 'next_service') %}
+              {% set lines = [states(r) | replace('_', ' ') | capitalize ~ (' · ' ~ b ~ '%' if b is not none else '')] %}
+              {% if err %}{% set lines = lines + [err | capitalize] %}
+              {% elif lc %}{% set lines = lines + ['Last clean ' ~ (as_datetime(lc) | as_local).strftime('%a %H:%M')] %}{% endif %}
+              {% if ns_ %}{% set lines = lines + [ns_.name ~ ': ' ~ ns_.hours ~ ' h left'] %}{% endif %}
+              {% set cards.l = cards.l + [{'id': 'vacuum', 'title': 'Patricia', 'lines': lines,
+                  'tone': 'bad' if err else ('warn' if ns_ and ns_.hours < 10 else 'good')}] %}
+            {% endif %}
+            {# Weather tomorrow #}
+            {% set f = state_attr('sensor.weather_outlook', 'forecast') or [] %}
+            {% if f | count > 1 %}
+              {% set cards.l = cards.l + [{'id': 'tomorrow', 'title': 'Tomorrow',
+                  'lines': [f[1].condition | replace('partlycloudy', 'partly cloudy') | replace('-', ' ') | capitalize,
+                            'High ' ~ f[1].temperature | round(0) | int ~ '° · low ' ~ (f[1].templow | round(0) | int if f[1].templow is number else '–') ~ '°'],
+                  'tone': 'info'}] %}
+            {% endif %}
+            {# Homelab #}
+            {% set h = 'sensor.homelab_status' %}
+            {% if states(h) != 'unknown' %}
+              {% set t = state_attr(h, 'temperature') %}
+              {% set m = state_attr(h, 'memory') %}
+              {% set d = state_attr(h, 'disk') %}
+              {% set cards.l = cards.l + [{'id': 'homelab', 'title': 'Homelab',
+                  'lines': [state_attr(h, 'text'),
+                            'Pi ' ~ (t | round(0) | int if t is number else '–') ~ '°C · RAM ' ~ (m | round(0) | int if m is number else '–') ~ '% · disk ' ~ (d | round(0) | int if d is number else '–') ~ '%'],
+                  'tone': states(h)}] %}
+            {% endif %}
+            {{ cards.l }}
+
+          # The launcher's own widget format (Homelab.java in la-pulp/homelab-tv): the TV swaps these in for the
+          # theme's sample status, widgets and stack. widget = {eyebrow, big, lines[], tag, tag_accent, dot: ok|warn|""}.
+          # Strip shows widgets[0], the stack, widgets[2]; centre stage shows the stack only.
+          launcher: >
+            {%- macro deg(v) -%}{{ (v | round(0) | int | string | replace('-', '−')) ~ '°' if v is number else '–' }}{%- endmacro -%}
+            {%- macro sky(c) -%}{{ {'clear-night': 'Clear', 'cloudy': 'Cloudy', 'fog': 'Fog', 'hail': 'Hail',
+                'lightning': 'Lightning', 'lightning-rainy': 'Thunderstorms', 'partlycloudy': 'Partly cloudy',
+                'pouring': 'Heavy rain', 'rainy': 'Rain', 'snowy': 'Snow', 'snowy-rainy': 'Sleet', 'sunny': 'Sunny',
+                'windy': 'Windy', 'windy-variant': 'Windy', 'exceptional': 'Unusual weather'}.get(c, c | string | capitalize) }}{%- endmacro -%}
+            {%- set w = 'weather.forecast_home' -%}
+            {%- set f = state_attr('sensor.weather_outlook', 'forecast') or [] -%}
+            {%- set h = 'sensor.homelab_status' -%}
+            {%- set r = 'sensor.roborock_summary' -%}
+            {%- set hs = states(h) -%}
+            {%- set hdot = 'ok' if hs == 'good' else ('warn' if hs in ['warn', 'bad'] else '') -%}
+            {%- set htext = (state_attr(h, 'text') or 'Homelab · no data') | replace('Homelab · ', '') -%}
+            {%- set t, m, d = state_attr(h, 'temperature'), state_attr(h, 'memory'), state_attr(h, 'disk') -%}
+            {%- set homelab = {'eyebrow': 'HOMELAB', 'big': htext[:1] | upper ~ htext[1:],
+                'lines': ['Pi ' ~ (t | round(0) | int ~ '°C' if t is number else '–') ~ ' · RAM ' ~ (m | round(0) | int ~ '%' if m is number else '–') ~ ' · disk ' ~ (d | round(0) | int ~ '%' if d is number else '–')],
+                'tag': '', 'dot': hdot} -%}
+            {%- set ns = namespace(stack=[], widgets=[]) -%}
+            {#- Roborock -#}
+            {%- set rob = none -%}
+            {%- if has_value(r) -%}
+              {%- set err, b, lc, svc = state_attr(r, 'error'), state_attr(r, 'battery'), state_attr(r, 'last_clean'), state_attr(r, 'next_service') -%}
+              {%- set rl = [] -%}
+              {%- if b is not none -%}{%- set rl = rl + ['Battery ' ~ b ~ '%'] -%}{%- endif -%}
+              {%- if lc -%}{%- set rl = rl + ['Last clean ' ~ (as_datetime(lc) | as_local).strftime('%a %H:%M')] -%}{%- endif -%}
+              {%- set needs = svc and svc.hours is number and svc.hours < 10 -%}
+              {%- set rob = {'eyebrow': 'PATRICIA', 'big': states(r) | replace('_', ' ') | capitalize, 'lines': rl,
+                  'tag': (err | upper) if err else ((svc.name | upper ~ ' · ' ~ svc.hours ~ ' H LEFT') if svc else ''),
+                  'tag_accent': (err or needs) | bool, 'dot': 'warn' if (err or needs) else 'ok'} -%}
+            {%- endif -%}
+            {#- Weather now -#}
+            {%- set now_w = none -%}
+            {%- if has_value(w) -%}
+              {%- set today = f[0] if f | count > 0 else {} -%}
+              {%- set tom = f[1] if f | count > 1 else none -%}
+              {%- set p = today.get('precipitation') -%}
+              {%- set now_w = {'eyebrow': 'WEATHER', 'big': deg(state_attr(w, 'temperature')) ~ '  ' ~ sky(states(w)),
+                  'lines': ['Feels like ' ~ deg(state_attr(w, 'apparent_temperature')) ~ ' · Low of ' ~ deg(today.get('templow')),
+                            ('Tomorrow · ' ~ deg(tom.temperature) ~ ', ' ~ sky(tom.condition) | lower) if tom else 'High of ' ~ deg(today.get('temperature'))],
+                  'tag': ('PRECIPITATION · ' ~ p ~ ' MM TODAY') if p is number and p > 0
+                         else ('SUNSET ' ~ (as_datetime(state_attr('sun.sun', 'next_setting')) | as_local).strftime('%H:%M') if state_attr('sun.sun', 'next_setting') else '')} -%}
+            {%- endif -%}
+            {#- The stack -#}
+            {%- if f | count > 1 -%}
+              {%- set tom = f[1] -%}
+              {%- set tp = tom.get('precipitation') -%}
+              {%- set ns.stack = ns.stack + [{'eyebrow': 'TOMORROW', 'big': deg(tom.temperature) ~ '  ' ~ sky(tom.condition),
+                  'lines': ['Low of ' ~ deg(tom.get('templow'))] + (['Precipitation · ' ~ tp ~ ' mm'] if tp is number and tp > 0 else []), 'tag': ''}] -%}
+            {%- endif -%}
+            {%- if f | count > 2 -%}
+              {%- set days = namespace(l=[]) -%}
+              {%- for x in f[1:7] -%}{%- set days.l = days.l + [(as_datetime(x.datetime) | as_local).strftime('%a') ~ ' ' ~ deg(x.temperature)] -%}{%- endfor -%}
+              {%- set highs = f[1:7] | map(attribute='temperature') | select('number') | list -%}
+              {%- set ns.stack = ns.stack + [{'eyebrow': 'THE WEEK AHEAD',
+                  'big': ('Highs ' ~ deg(highs | min) ~ ' to ' ~ deg(highs | max)) if highs else 'No forecast',
+                  'lines': [days.l[:3] | join(' · '), days.l[3:6] | join(' · ')], 'tag': ''}] -%}
+            {%- endif -%}
+            {%- set ns.stack = ns.stack + [homelab] -%}
+            {#- A Roborock that needs you leads the stack, so centre stage shows it too; the strip's left widget is then the homelab -#}
+            {%- set rob_up = rob and rob.dot == 'warn' -%}
+            {%- if rob_up -%}{%- set ns.stack = [rob] + ns.stack -%}{%- endif -%}
+            {#- The strip: left, middle (the stack covers it), right -#}
+            {%- set ns.widgets = [homelab if rob_up else (rob or homelab), ns.stack[0], now_w or homelab] -%}
+            {{ {'status': {'eyebrow': 'HOMELAB', 'big': homelab.big, 'dot': hdot},
+                'widgets': ns.widgets, 'stack': ns.stack} }}
+
+rest_command:
+  # PiPup on the Bravia (installed for the pill reminder). Colours from the homelab palette.
+  pipup:
+    url: !secret tv_pipup_url              # http://<tv address>:7979/notify, from the ha-secrets Secret
+    method: post
+    content_type: application/json
+    timeout: 5
+    payload: >
+      {{ {'title': title, 'message': message, 'duration': duration | default(12) | int,
+          'position': 0, 'titleColor': '#EF8C4F', 'titleSize': 20,
+          'messageColor': '#E6EAEE', 'messageSize': 15,
+          'backgroundColor': '#F0151A20'} | to_json }}
+
+script:
+  tv_popup:
+    alias: TV pop-up (only when the TV is on)
+    mode: queued
+    fields:
+      title: {description: Title, example: Patricia finished}
+      message: {description: Text, example: Back on the dock.}
+      duration: {description: Seconds on screen, example: 12}
+    sequence:
+      - condition: state
+        entity_id: media_player.bravia
+        state: "on"
+      - action: rest_command.pipup
+        continue_on_error: true
+        data:
+          title: "{{ title }}"
+          message: "{{ message }}"
+          duration: "{{ duration | default(12) }}"

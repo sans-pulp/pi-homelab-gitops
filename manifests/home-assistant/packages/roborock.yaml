@@ -1,0 +1,69 @@
+# Roborock Qrevo Curv (S5X): pop-ups on the TV and a summary sensor for the TV feed.
+# The robot keeps its app name "Patricia", so the integration creates vacuum.patricia and sensor.patricia_*.
+# The Roborock app's own alerts stay on until this has run for a couple of weeks.
+
+template:
+  - sensor:
+      - name: Roborock summary
+        unique_id: roborock_summary
+        icon: mdi:robot-vacuum
+        state: "{{ states('sensor.patricia_status') if has_value('sensor.patricia_status') else states('vacuum.patricia') }}"
+        attributes:
+          battery: "{{ states('sensor.patricia_battery') | int(none) }}"
+          error: >
+            {% set e = states('sensor.patricia_vacuum_error') %}
+            {% set de = states('sensor.patricia_dock_error') %}
+            {% if e not in ['none', 'unknown', 'unavailable', 'ok'] %}{{ e | replace('_', ' ') }}
+            {% elif de not in ['none', 'unknown', 'unavailable', 'ok'] %}Dock: {{ de | replace('_', ' ') }}
+            {% else %}{{ none }}{% endif %}
+          last_clean: >
+            {% set t = states('sensor.patricia_last_clean_end') %}
+            {{ as_datetime(t).astimezone(now().tzinfo).isoformat() if as_datetime(t) is not none else none }}
+          # Lowest "time left" consumable, in hours, e.g. {"name": "Filter", "hours": 38}
+          next_service: >
+            {% set ns = namespace(best=none) %}
+            {% for e in ['main_brush', 'side_brush', 'filter', 'sensor'] %}
+              {% set id = 'sensor.patricia_' ~ e ~ '_time_left' %}
+              {% set v = states(id) | float(none) %}
+              {% if v is not none %}
+                {% set u = state_attr(id, 'unit_of_measurement') %}
+                {% set h = v / 3600 if u == 's' else v / 60 if u == 'min' else v * 24 if u == 'd' else v %}
+                {% if ns.best is none or h < ns.best.hours %}
+                  {% set ns.best = {'name': e | replace('_', ' ') | capitalize, 'hours': h | round(0) | int} %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.best }}
+
+automation:
+  - id: roborock_finished_tv
+    alias: Patricia finished → TV pop-up
+    triggers:
+      - trigger: state
+        entity_id: vacuum.patricia
+        from: cleaning
+        to: [returning, docked]
+    actions:
+      - action: script.tv_popup
+        data:
+          title: Patricia finished
+          message: >
+            {% set a = states('sensor.patricia_cleaning_area') %}
+            {{ 'Cleaned ' ~ a ~ ' m². ' if is_number(a) else '' }}Back on the dock.
+
+  - id: roborock_error_tv
+    alias: Patricia needs help → TV pop-up
+    triggers:
+      - trigger: state
+        entity_id: sensor.roborock_summary
+        attribute: error
+    conditions:
+      - "{{ trigger.to_state is not none and trigger.to_state.attributes.get('error') not in [none, ''] }}"
+    mode: single
+    max_exceeded: silent
+    actions:
+      - action: script.tv_popup
+        data:
+          title: Patricia needs help
+          message: "{{ trigger.to_state.attributes.get('error') | capitalize }}"
+          duration: 30

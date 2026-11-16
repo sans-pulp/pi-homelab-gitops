@@ -1,0 +1,13 @@
+# Home Assistant listens on the Pi itself (hostNetwork) at :8123.
+# This ClusterIP is for things inside the cluster (later: Tailscale operator, ingress).
+apiVersion: v1
+kind: Service
+metadata:
+  name: home-assistant
+spec:
+  selector:
+    app: home-assistant
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
