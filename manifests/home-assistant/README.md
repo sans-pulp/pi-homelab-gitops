@@ -67,7 +67,9 @@ Attributes:
 ```
 
 `launcher` holds the same data in the launcher's own theme format (`status`, `widgets`, `stack`; each widget is
-`{eyebrow, big, lines[], tag, tag_accent, dot}`). The TV reads only this key (`HaFeed.java` in la-pulp/homelab-tv), so
+`{eyebrow, big, lines[], tag, tag_accent, dot}`), plus `sentence` (`{lead, rest, tone}`) for the quiet layout's one line,
+e.g. `{"lead": "−2° and snow.", "rest": " Patricia is docked, the homelab's all normal, and tomorrow's −4° and cloudy.",
+"tone": ""}`; tone `warn` (Patricia needs help, the homelab needs a look) puts the lead in amber. The TV reads only this key (`HaFeed.java` in la-pulp/homelab-tv), so
 a new card on the TV is a change here, not a launcher build.
 
 Add a field: bump nothing, the launcher ignores unknown keys. Rename or remove one: bump `version`.

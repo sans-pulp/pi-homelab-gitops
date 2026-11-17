@@ -133,7 +133,8 @@ template:
 
           # The launcher's own widget format (Homelab.java in la-pulp/homelab-tv): the TV swaps these in for the
           # theme's sample status, widgets and stack. widget = {eyebrow, big, lines[], tag, tag_accent, dot: ok|warn|""}.
-          # Strip shows widgets[0], the stack, widgets[2]; centre stage shows the stack only.
+          # Strip shows widgets[0], the stack, widgets[2]; centre stage shows the stack only; quiet shows the same
+          # three as cards and sentence = {lead, rest, tone: warn|""} as its one line under the clock.
           launcher: >
             {%- macro deg(v) -%}{{ (v | round(0) | int | string | replace('-', '−')) ~ '°' if v is number else '–' }}{%- endmacro -%}
             {%- macro sky(c) -%}{{ {'clear-night': 'Clear', 'cloudy': 'Cloudy', 'fog': 'Fog', 'hail': 'Hail',
@@ -197,8 +198,32 @@ template:
             {%- if rob_up -%}{%- set ns.stack = [rob] + ns.stack -%}{%- endif -%}
             {#- The strip: left, middle (the stack covers it), right -#}
             {%- set ns.widgets = [homelab if rob_up else (rob or homelab), ns.stack[0], now_w or homelab] -%}
+            {#- Quiet's sentence: what needs you leads, in amber (tone warn); else the weather now. The rest follows in
+                one line: "−2° and snow. Patricia is docked, the homelab's all normal, and tomorrow's −4° and cloudy." -#}
+            {%- set wnow = (deg(state_attr(w, 'temperature')) ~ ' and ' ~ (sky(states(w)) | lower)) if has_value(w) else '' -%}
+            {%- set lead, tone = '', '' -%}
+            {%- if rob_up -%}
+              {%- set rerr, rsvc = state_attr(r, 'error'), state_attr(r, 'next_service') -%}
+              {%- set lead = 'Patricia ' ~ (('needs help: ' ~ (rerr | lower)) if rerr
+                  else ('is due for a ' ~ (rsvc.name | lower) ~ ' change' if rsvc else 'needs a look')) ~ '.' -%}
+              {%- set tone = 'warn' -%}
+            {%- elif hdot == 'warn' -%}
+              {%- set lead = 'The homelab needs a look: ' ~ (htext[:1] | lower) ~ htext[1:] ~ '.' -%}
+              {%- set tone = 'warn' -%}
+            {%- elif wnow -%}
+              {%- set lead = (wnow[:1] | upper) ~ wnow[1:] ~ '.' -%}
+            {%- endif -%}
+            {%- set parts = namespace(l=[]) -%}
+            {%- if tone and wnow -%}{%- set parts.l = parts.l + [wnow] -%}{%- endif -%}
+            {%- if rob and not rob_up -%}{%- set parts.l = parts.l + ['Patricia is ' ~ (states(r) | replace('_', ' ') | lower)] -%}{%- endif -%}
+            {%- if hdot == 'ok' -%}{%- set parts.l = parts.l + ["the homelab's all normal"] -%}{%- endif -%}
+            {%- if f | count > 1 -%}{%- set parts.l = parts.l + ["tomorrow's " ~ deg(f[1].temperature) ~ ' and ' ~ (sky(f[1].condition) | lower)] -%}{%- endif -%}
+            {%- set pl = parts.l -%}
+            {%- set rest = (pl[0] if pl | count == 1 else ((pl[:-1] | join(', ')) ~ ', and ' ~ pl[-1]) if pl | count > 1 else '') -%}
+            {%- set rest = (' ' ~ (rest[:1] | upper) ~ rest[1:] ~ '.') if rest else '' -%}
             {{ {'status': {'eyebrow': 'HOMELAB', 'big': homelab.big, 'dot': hdot},
-                'widgets': ns.widgets, 'stack': ns.stack} }}
+                'widgets': ns.widgets, 'stack': ns.stack,
+                'sentence': {'lead': lead or (rest | trim), 'rest': rest if lead else '', 'tone': tone}} }}
 
 rest_command:
   # PiPup on the Bravia (installed for the pill reminder). Colours from the homelab palette.
