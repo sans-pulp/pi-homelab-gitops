@@ -13,9 +13,9 @@ views:
             heading: Living room TV
             icon: mdi:television
           - type: media-control
-            entity: media_player.bravia
+            entity: media_player.androidtv      # Android TV Remote: volume and buttons work best (eARC soundbar)
           - type: tile
-            entity: media_player.bravia
+            entity: media_player.androidtv
             name: Bravia
             features_position: bottom
             features:

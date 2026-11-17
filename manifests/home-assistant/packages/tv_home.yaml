@@ -7,6 +7,7 @@
 # Entity IDs this file expects (rename in Settings → Entities if yours differ):
 #   weather.forecast_home   Met.no, created at onboarding
 #   media_player.bravia     Sony Bravia TV integration, device renamed to "Bravia"
+#   media_player.androidtv  Android TV Remote integration, device named "androidtv" (volume, mute)
 #   sensor.homelab_status   packages/homelab_health.yaml
 #   sensor.roborock_summary packages/roborock.yaml
 
@@ -73,13 +74,15 @@ template:
             {{ ns.out }}
           tv: >
             {% set t = 'media_player.bravia' %}
-            {% set v = state_attr(t, 'volume_level') %}
+            {#- Volume and mute come from Android TV Remote (androidtv), which follows the soundbar; the rest from Sony Bravia -#}
+            {% set r = 'media_player.androidtv' if has_value('media_player.androidtv') else t %}
+            {% set v = state_attr(r, 'volume_level') %}
             {{ {
               'state': states(t),
               'source': state_attr(t, 'source'),
               'title': state_attr(t, 'media_title'),
               'volume': (v * 100) | round(0) | int if v is number else none,
-              'muted': state_attr(t, 'is_volume_muted')
+              'muted': state_attr(r, 'is_volume_muted')
             } }}
           vacuum: >
             {% set r = 'sensor.roborock_summary' %}

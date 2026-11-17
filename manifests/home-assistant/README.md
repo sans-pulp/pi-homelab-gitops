@@ -38,6 +38,7 @@ In Lab 05 an ExternalSecret from Vault replaces this.
 |---|---|
 | `weather.forecast_home` | Met.no, created at onboarding |
 | `media_player.bravia` | Sony Bravia TV integration; rename the device to "Bravia" |
+| `media_player.androidtv` | Android TV Remote integration; the device is named "androidtv". Volume and mute (it follows the eARC soundbar); falls back to `media_player.bravia` |
 | `vacuum.patricia`, `sensor.patricia_*` | Roborock integration; the robot keeps its app name "Patricia". If IDs differ, check Developer tools → States |
 | `sensor.system_monitor_processor_temperature`, `_memory_usage`, `_disk_usage` | System Monitor integration |
 
